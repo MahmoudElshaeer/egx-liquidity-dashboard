@@ -23,9 +23,8 @@ st.set_page_config(page_title=APP_TITLE, layout="wide")
 PROJECT_DIR = Path(__file__).resolve().parent
 README_PATH = PROJECT_DIR / "README.md"
 
-# للـ Cloud: خلي الملف في نفس الريبو باسم liquidity_all.xlsx
-#DATA_PATH = PROJECT_DIR / "liquidity_all.xlsx"
-DATA_PATH = Path(__file__).resolve().parent / "liquidity_all.xlsx"
+CSV_PATH = PROJECT_DIR / "liquidity_all.csv"
+XLSX_PATH = PROJECT_DIR / "liquidity_all.xlsx"  # fallback
 
 # =========================
 # CSS (تكبير التابات + عناوين)
@@ -92,8 +91,10 @@ NAME_OVERRIDES = {
 ARABIC_TATWEEL = "\u0640"
 ARABIC_DIACRITICS_RE = re.compile(r"[\u0617-\u061A\u064B-\u0652]")
 
+
 def is_arabic_char(ch: str) -> bool:
     return "\u0600" <= ch <= "\u06FF"
+
 
 def normalize_arabic_name(s: str) -> str:
     if s is None or (isinstance(s, float) and pd.isna(s)):
@@ -102,13 +103,14 @@ def normalize_arabic_name(s: str) -> str:
     s = str(s)
 
     # إزالة اتجاه/رموز خفية
-    s = (s.replace("\u200f", "")
-           .replace("\u200e", "")
-           .replace("\u202b", "")
-           .replace("\u202a", "")
-           .replace("\xa0", " ")
-           .replace(ARABIC_TATWEEL, "")
-        )
+    s = (
+        s.replace("\u200f", "")
+        .replace("\u200e", "")
+        .replace("\u202b", "")
+        .replace("\u202a", "")
+        .replace("\xa0", " ")
+        .replace(ARABIC_TATWEEL, "")
+    )
 
     # إزالة التشكيل
     s = ARABIC_DIACRITICS_RE.sub("", s)
@@ -120,7 +122,12 @@ def normalize_arabic_name(s: str) -> str:
     tokens = s.split(" ")
     merged = []
     for tok in tokens:
-        if len(tok) == 1 and merged and is_arabic_char(tok) and all(is_arabic_char(c) for c in merged[-1][-1:]):
+        if (
+            len(tok) == 1
+            and merged
+            and is_arabic_char(tok)
+            and all(is_arabic_char(c) for c in merged[-1][-1:])
+        ):
             merged[-1] = merged[-1] + tok
         else:
             merged.append(tok)
@@ -143,6 +150,7 @@ def normalize_arabic_name(s: str) -> str:
 
     return s.strip()
 
+
 # =========================
 # Load + unify columns
 # =========================
@@ -151,14 +159,16 @@ def load_data_df(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df.columns = df.columns.astype(str).str.strip()
 
-    df = df.rename(columns={
-        "صافى السيولة": "صافي السيولة",
-        "أخر سعر": "آخر سعر",
-        "% مخطط السيولة": "نسبة مخطط السيولة",
-        "التغير%": "التغير %",
-        "التغير % ": "التغير %",
-        "الاسم": "الإسم",
-    })
+    df = df.rename(
+        columns={
+            "صافى السيولة": "صافي السيولة",
+            "أخر سعر": "آخر سعر",
+            "% مخطط السيولة": "نسبة مخطط السيولة",
+            "التغير%": "التغير %",
+            "التغير % ": "التغير %",
+            "الاسم": "الإسم",
+        }
+    )
 
     required = ["التاريخ", "الرمز", "السيولة الداخلة", "السيولة الخارجة", "صافي السيولة"]
     missing = [c for c in required if c not in df.columns]
@@ -169,9 +179,14 @@ def load_data_df(df: pd.DataFrame) -> pd.DataFrame:
 
     # تحويل أرقام
     num_cols = [
-        "آخر سعر", "التغير %", "قيمة التداول",
-        "السيولة الداخلة", "السيولة الخارجة", "صافي السيولة",
-        "نسبة مخطط السيولة", "رقم الصفحة"
+        "آخر سعر",
+        "التغير %",
+        "قيمة التداول",
+        "السيولة الداخلة",
+        "السيولة الخارجة",
+        "صافي السيولة",
+        "نسبة مخطط السيولة",
+        "رقم الصفحة",
     ]
     for c in num_cols:
         if c in df.columns:
@@ -188,20 +203,39 @@ def load_data_df(df: pd.DataFrame) -> pd.DataFrame:
 
     df["اسم_نهائي"] = df.apply(
         lambda r: NAME_OVERRIDES.get(str(r["الرمز"]).strip(), r["اسم_منظف"]),
-        axis=1
+        axis=1,
     )
     df["اسم_نهائي"] = df["اسم_نهائي"].fillna("").astype(str).str.strip()
     return df
 
-@st.cache_data
-def load_data_from_excel(path: Path) -> pd.DataFrame:
-    df = pd.read_excel(path)
-    return load_data_df(df)
 
 @st.cache_data
-def load_data_from_uploaded(file_bytes: bytes) -> pd.DataFrame:
+def load_data_from_csv(path_str: str, mtime: float) -> pd.DataFrame:
+    # mtime فقط لكسر الكاش عند تغيّر الملف
+    df = pd.read_csv(path_str, encoding="utf-8-sig")
+    return load_data_df(df)
+
+
+@st.cache_data
+def load_data_from_excel(path_str: str, mtime: float) -> pd.DataFrame:
+    df = pd.read_excel(path_str)
+    return load_data_df(df)
+
+
+@st.cache_data
+def load_data_from_uploaded_csv(file_bytes: bytes) -> pd.DataFrame:
+    # CSV upload
+    from io import BytesIO
+    df = pd.read_csv(BytesIO(file_bytes), encoding="utf-8-sig")
+    return load_data_df(df)
+
+
+@st.cache_data
+def load_data_from_uploaded_excel(file_bytes: bytes) -> pd.DataFrame:
+    # XLSX upload
     df = pd.read_excel(file_bytes)
     return load_data_df(df)
+
 
 # =========================
 # Helpers
@@ -212,10 +246,14 @@ def fmt_money(x):
     x = float(x)
     sign = "-" if x < 0 else ""
     x = abs(x)
-    if x >= 1e9:  return f"{sign}{x/1e9:.2f}B"
-    if x >= 1e6:  return f"{sign}{x/1e6:.2f}M"
-    if x >= 1e3:  return f"{sign}{x/1e3:.2f}K"
+    if x >= 1e9:
+        return f"{sign}{x/1e9:.2f}B"
+    if x >= 1e6:
+        return f"{sign}{x/1e6:.2f}M"
+    if x >= 1e3:
+        return f"{sign}{x/1e3:.2f}K"
     return f"{sign}{x:.0f}"
+
 
 def consecutive_positive_days(df_sym):
     s = df_sym.sort_values("التاريخ")["صافي السيولة"].fillna(0).tolist()
@@ -227,6 +265,7 @@ def consecutive_positive_days(df_sym):
             break
     return cnt
 
+
 def style_net_column(v):
     if pd.isna(v):
         return ""
@@ -236,6 +275,7 @@ def style_net_column(v):
         return "color: #D50000; font-weight: 800;"
     return ""
 
+
 def weighted_mean(values, weights):
     v = pd.to_numeric(values, errors="coerce")
     w = pd.to_numeric(weights, errors="coerce")
@@ -243,6 +283,7 @@ def weighted_mean(values, weights):
     if mask.sum() == 0:
         return None
     return float((v[mask] * w[mask]).sum() / w[mask].sum())
+
 
 def get_change_metric(scope_df: pd.DataFrame, mode: str):
     if "التغير %" not in scope_df.columns or scope_df.empty:
@@ -273,12 +314,14 @@ def get_change_metric(scope_df: pd.DataFrame, mode: str):
 
     return "-", None
 
+
 def add_watermark(fig, text=COPYRIGHT):
-    # بصمة خفيفة على الرسومات
     fig.add_annotation(
         text=text,
-        xref="paper", yref="paper",
-        x=0.99, y=0.01,
+        xref="paper",
+        yref="paper",
+        x=0.99,
+        y=0.01,
         xanchor="right",
         yanchor="bottom",
         showarrow=False,
@@ -287,6 +330,7 @@ def add_watermark(fig, text=COPYRIGHT):
     )
     return fig
 
+
 # =========================
 # Header
 # =========================
@@ -294,17 +338,38 @@ st.title(f"📊 {APP_TITLE}")
 st.caption(f"{APP_SUBTITLE} — Version {APP_VERSION} — {COPYRIGHT}")
 
 # =========================
-# Load data (local file or upload)
+# Load data (CSV first, XLSX fallback, then Upload)
 # =========================
 df = None
-if DATA_PATH.exists():
-    df = load_data_from_excel(DATA_PATH)
+data_source = None
+
+if CSV_PATH.exists():
+    df = load_data_from_csv(str(CSV_PATH), CSV_PATH.stat().st_mtime)
+    data_source = f"CSV: {CSV_PATH.name}"
+elif XLSX_PATH.exists():
+    df = load_data_from_excel(str(XLSX_PATH), XLSX_PATH.stat().st_mtime)
+    data_source = f"XLSX: {XLSX_PATH.name}"
 else:
-    st.warning("ملف البيانات (liquidity_all.xlsx) غير موجود. ارفع الملف من هنا (مناسب للـ Cloud).")
-    up = st.file_uploader("Upload liquidity_all.xlsx", type=["xlsx"])
+    st.warning("ملف البيانات غير موجود (liquidity_all.csv أو liquidity_all.xlsx). ارفع الملف من هنا.")
+    up = st.file_uploader("Upload liquidity_all.csv أو liquidity_all.xlsx", type=["csv", "xlsx"])
     if up is None:
         st.stop()
-    df = load_data_from_uploaded(up)
+
+    uploaded_bytes = up.getvalue()
+    if up.name.lower().endswith(".csv"):
+        df = load_data_from_uploaded_csv(uploaded_bytes)
+        data_source = f"Upload CSV: {up.name}"
+    else:
+        df = load_data_from_uploaded_excel(uploaded_bytes)
+        data_source = f"Upload XLSX: {up.name}"
+
+# Debug (اختياري)
+with st.expander("🛠️ Debug (تأكيد التحميل)"):
+    st.write("Source:", data_source)
+    st.write("Rows:", len(df))
+    st.write("Date min:", df["التاريخ"].min())
+    st.write("Date max:", df["التاريخ"].max())
+    st.write("Columns:", list(df.columns))
 
 # =========================
 # Top filters
@@ -499,7 +564,7 @@ with tab_market:
 
         daily_net = (
             scope_df.assign(التاريخ=scope_df["التاريخ"].dt.date)
-                    .groupby("التاريخ", as_index=False)["صافي السيولة"].sum()
+            .groupby("التاريخ", as_index=False)["صافي السيولة"].sum()
         )
         daily_net["الإشارة"] = daily_net["صافي السيولة"].apply(lambda x: "موجب" if x >= 0 else "سالب")
         fig_market = px.bar(
@@ -533,7 +598,6 @@ with tab_watch:
     if dff.empty:
         st.warning("لا توجد بيانات حسب الفلاتر المختارة.")
     else:
-        # نجمع على الرمز فقط لضمان عدم تكرار الاسم بسبب OCR
         def most_common_name(x):
             x = x.dropna().astype(str).str.strip()
             if x.empty:
@@ -542,12 +606,12 @@ with tab_watch:
 
         rank = (
             dff.groupby("الرمز", as_index=False)
-               .agg({
-                   "اسم_نهائي": most_common_name,
-                   "صافي السيولة": "sum",
-                   "قيمة التداول": "sum",
-                   "التغير %": "mean"
-               })
+            .agg({
+                "اسم_نهائي": most_common_name,
+                "صافي السيولة": "sum",
+                "قيمة التداول": "sum",
+                "التغير %": "mean"
+            })
         )
 
         consec_map = {}
@@ -592,7 +656,7 @@ with tab_details:
         with c1:
             sym_daily = (
                 sym_df.assign(التاريخ=sym_df["التاريخ"].dt.date)
-                      .groupby("التاريخ", as_index=False)["صافي السيولة"].sum()
+                .groupby("التاريخ", as_index=False)["صافي السيولة"].sum()
             )
             sym_daily["الإشارة"] = sym_daily["صافي السيولة"].apply(lambda x: "موجب" if x >= 0 else "سالب")
             fig_sym = px.bar(
@@ -643,14 +707,14 @@ with tab_history:
     else:
         hist = (
             scope_df.assign(التاريخ=scope_df["التاريخ"].dt.date)
-                    .groupby("التاريخ", as_index=False)
-                    .agg({
-                        "صافي السيولة": "sum",
-                        "السيولة الداخلة": "sum",
-                        "السيولة الخارجة": "sum",
-                        "التغير %": "mean",
-                        "آخر سعر": "last" if "آخر سعر" in scope_df.columns else "size"
-                    })
+            .groupby("التاريخ", as_index=False)
+            .agg({
+                "صافي السيولة": "sum",
+                "السيولة الداخلة": "sum",
+                "السيولة الخارجة": "sum",
+                "التغير %": "mean",
+                "آخر سعر": "last" if "آخر سعر" in scope_df.columns else "size"
+            })
         ).sort_values("التاريخ")
 
         hist["الإشارة"] = hist["صافي السيولة"].apply(lambda x: "موجب" if x >= 0 else "سالب")
@@ -695,4 +759,3 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-
