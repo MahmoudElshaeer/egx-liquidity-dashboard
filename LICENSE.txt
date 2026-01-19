@@ -1,0 +1,7 @@
+Copyright (c) 2026 Mahmoud Abdrabbo
+All Rights Reserved.
+
+This software and its source code are proprietary and confidential.
+You may use this application via the provided URL, but you may not copy,
+modify, distribute, sublicense, or use any part of the source code without
+explicit written permission from the author.
