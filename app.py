@@ -1,18 +1,18 @@
 import re
 import io
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 import plotly.express as px
-from pathlib import Path
 
 # =========================
 # App Meta (حقوق + About)
 # =========================
 APP_TITLE = "مراقب السيولة"
 APP_SUBTITLE = "EGX Liquidity Monitor Dashboard"
-APP_VERSION = "1.1.1"
+APP_VERSION = "1.1.2"
 AUTHOR = "Mahmoud Abdrabbo"
 COPYRIGHT = f"© 2026 {AUTHOR}. All rights reserved."
 DISCLAIMER = "هذا التطبيق لأغراض معلوماتية فقط ولا يُعد توصية استثمارية."
@@ -28,6 +28,13 @@ README_PATH = PROJECT_DIR / "README.md"
 
 CSV_PATH  = PROJECT_DIR / "liquidity_all.csv"
 XLSX_PATH = PROJECT_DIR / "liquidity_all.xlsx"  # fallback
+
+# =========================
+# Colors (ثابتة)
+# =========================
+GREEN = "#00C853"
+RED   = "#D50000"
+SIGN_COLOR_MAP = {"موجب": GREEN, "سالب": RED}
 
 # =========================
 # CSS (تكبير التابات + عناوين)
@@ -98,6 +105,7 @@ def normalize_arabic_name(s: str) -> str:
         return ""
     s = str(s)
 
+    # إزالة اتجاه/رموز خفية
     s = (s.replace("\u200f", "")
            .replace("\u200e", "")
            .replace("\u202b", "")
@@ -106,9 +114,13 @@ def normalize_arabic_name(s: str) -> str:
            .replace(ARABIC_TATWEEL, "")
     )
 
+    # إزالة التشكيل
     s = ARABIC_DIACRITICS_RE.sub("", s)
+
+    # توحيد مسافات
     s = re.sub(r"\s+", " ", s).strip()
 
+    # دمج الحروف اللي الـ OCR فصلها
     tokens = s.split(" ")
     merged = []
     for tok in tokens:
@@ -118,6 +130,7 @@ def normalize_arabic_name(s: str) -> str:
             merged.append(tok)
     s = " ".join(merged)
 
+    # إصلاحات OCR شائعة
     fixes = [
         ("مرصف", "مصرف"),
         ("مرص", "مصر"),
@@ -174,8 +187,10 @@ def load_data_df(df: pd.DataFrame) -> pd.DataFrame:
     if missing:
         raise ValueError(f"أعمدة ناقصة في الملف: {missing}")
 
+    # تاريخ
     df["التاريخ"] = pd.to_datetime(df["التاريخ"], errors="coerce")
 
+    # تحويل أرقام
     num_cols = [
         "آخر سعر", "التغير %", "قيمة التداول",
         "السيولة الداخلة", "السيولة الخارجة", "صافي السيولة",
@@ -195,6 +210,7 @@ def load_data_df(df: pd.DataFrame) -> pd.DataFrame:
             f"(قبل التنظيف: {before} صف)"
         )
 
+    # تنظيف الأسماء العربية + Overrides
     if "الإسم" in df.columns:
         df["اسم_منظف"] = df["الإسم"].apply(normalize_arabic_name)
     else:
@@ -251,9 +267,9 @@ def style_net_column(v):
     if pd.isna(v):
         return ""
     if v > 0:
-        return "color: #00C853; font-weight: 800;"
+        return f"color: {GREEN}; font-weight: 800;"
     if v < 0:
-        return "color: #D50000; font-weight: 800;"
+        return f"color: {RED}; font-weight: 800;"
     return ""
 
 def weighted_mean(values, weights):
@@ -321,10 +337,9 @@ st.caption(f"{APP_SUBTITLE} — Version {APP_VERSION} — {COPYRIGHT}")
 # =========================
 with st.sidebar:
     st.markdown("### ⚙️ أدوات")
-    if st.button("🔄 تحديث البيانات الآن (مسح الكاش)"):
+    if st.button("🔄 تحديث البيانات الآن (مسح الكاش)", key="btn_refresh"):
         st.cache_data.clear()
         st.rerun()
-
     st.markdown("---")
     st.markdown("### 🧪 تشخيص سريع")
 
@@ -356,7 +371,7 @@ try:
 
     else:
         st.warning("ملف البيانات غير موجود داخل الريبو. ارفع الملف من هنا.")
-        up = st.file_uploader("Upload liquidity_all.csv أو liquidity_all.xlsx", type=["csv", "xlsx"])
+        up = st.file_uploader("Upload liquidity_all.csv أو liquidity_all.xlsx", type=["csv", "xlsx"], key="uploader_data")
         if up is None:
             st.stop()
 
@@ -383,7 +398,7 @@ with st.sidebar:
     st.write(f"**Rows:** {len(df):,}")
     st.write(f"**Date range:** {df['التاريخ'].min().date()} → {df['التاريخ'].max().date()}")
     with st.expander("🔍 Preview (أول 10 صفوف)"):
-        st.dataframe(df.head(10), use_container_width=True)
+        st.dataframe(df.head(10), use_container_width=True, key="preview_df")
 
 # =========================
 # Top filters
@@ -392,12 +407,12 @@ min_d, max_d = df["التاريخ"].min(), df["التاريخ"].max()
 
 c1, c2, c3 = st.columns([2, 2, 3])
 with c1:
-    start_date = st.date_input("من تاريخ", value=min_d.date(), min_value=min_d.date(), max_value=max_d.date())
+    start_date = st.date_input("من تاريخ", value=min_d.date(), min_value=min_d.date(), max_value=max_d.date(), key="start_date")
 with c2:
-    end_date = st.date_input("إلى تاريخ", value=max_d.date(), min_value=min_d.date(), max_value=max_d.date())
+    end_date = st.date_input("إلى تاريخ", value=max_d.date(), min_value=min_d.date(), max_value=max_d.date(), key="end_date")
 with c3:
     symbols = sorted(df["الرمز"].dropna().unique().tolist())
-    selected_symbol = st.selectbox("اختر سهم للتفاصيل", options=["(السوق)"] + symbols)
+    selected_symbol = st.selectbox("اختر سهم للتفاصيل", options=["(السوق)"] + symbols, key="selected_symbol")
 
 base_dff = df[(df["التاريخ"].dt.date >= start_date) & (df["التاريخ"].dt.date <= end_date)].copy()
 
@@ -468,6 +483,7 @@ if net_filter == "صافي موجب فقط":
 elif net_filter == "صافي سالب فقط":
     dff = dff[dff["صافي السيولة"] < 0].copy()
 
+# نطاق العرض (سوق أو سهم)
 if selected_symbol != "(السوق)":
     scope_df = dff[dff["الرمز"] == selected_symbol].copy()
     nm = scope_df["اسم_نهائي"].iloc[0] if (not scope_df.empty and "اسم_نهائي" in scope_df.columns) else ""
@@ -475,6 +491,9 @@ if selected_symbol != "(السوق)":
 else:
     scope_df = dff
     scope_label = "السوق"
+
+# Key base (يمنع Duplicate IDs)
+key_base = f"{selected_symbol}_{start_date}_{end_date}_{mode}_{net_filter}_{min_liq_pct}"
 
 # =========================
 # TAB: Help
@@ -490,6 +509,10 @@ with tab_help:
   - فترة مخصصة / آخر 10 جلسات / آخر جلسة فقط
   - فلترة صافي السيولة (موجب فقط / سالب فقط)
   - فلترة نسبة مخطط السيولة
+
+### ملاحظات
+- تم إضافة تصحيح تلقائي للأسماء العربية (OCR cleanup) + قاموس رموز (Overrides).
+- الألوان: **أخضر = صافي موجب**، **أحمر = صافي سالب**.
 """
     )
     st.info(DISCLAIMER)
@@ -531,7 +554,8 @@ with tab_readme:
             "⬇️ تحميل README.md",
             data=readme_text,
             file_name="README.md",
-            mime="text/markdown"
+            mime="text/markdown",
+            key="download_readme"
         )
         st.markdown(readme_text)
     else:
@@ -560,6 +584,11 @@ with tab_market:
 
         pie_df = pd.DataFrame({"النوع": ["السيولة الداخلة", "السيولة الخارجة"], "القيمة": [total_in, total_out]})
         fig_pie = px.pie(pie_df, names="النوع", values="القيمة", hole=0.6)
+        fig_pie.update_traces(
+            textposition="outside",
+            textinfo="percent+label",
+            marker=dict(colors=[GREEN, RED])
+        )
         fig_pie = add_watermark(fig_pie)
 
         daily_net = (
@@ -567,14 +596,20 @@ with tab_market:
                     .groupby("التاريخ", as_index=False)["صافي السيولة"].sum()
         )
         daily_net["الإشارة"] = daily_net["صافي السيولة"].apply(lambda x: "موجب" if x >= 0 else "سالب")
-        fig_market = px.bar(daily_net, x="التاريخ", y="صافي السيولة", color="الإشارة")
+
+        fig_market = px.bar(
+            daily_net, x="التاريخ", y="صافي السيولة",
+            color="الإشارة",
+            color_discrete_map=SIGN_COLOR_MAP,
+        )
+        fig_market.update_layout(legend_title_text="")
         fig_market = add_watermark(fig_market)
 
         left, right = st.columns([1, 1])
         with left:
-            st.plotly_chart(fig_pie, use_container_width=True)
+            st.plotly_chart(fig_pie, use_container_width=True, key=f"pie_{key_base}")
         with right:
-            st.plotly_chart(fig_market, use_container_width=True)
+            st.plotly_chart(fig_market, use_container_width=True, key=f"market_{key_base}")
 
 # =========================
 # TAB 2: Watchlist
@@ -615,7 +650,7 @@ with tab_watch:
             fmt_map["التغير %"] = "{:.2f}".format
         styler = styler.format(fmt_map)
 
-        st.dataframe(styler, use_container_width=True, hide_index=True)
+        st.dataframe(styler, use_container_width=True, hide_index=True, key=f"watch_{key_base}")
 
 # =========================
 # TAB 3: Details
@@ -637,14 +672,27 @@ with tab_details:
                       .groupby("التاريخ", as_index=False)["صافي السيولة"].sum()
             )
             sym_daily["الإشارة"] = sym_daily["صافي السيولة"].apply(lambda x: "موجب" if x >= 0 else "سالب")
-            fig_sym = px.bar(sym_daily, x="التاريخ", y="صافي السيولة", color="الإشارة")
+
+            fig_sym = px.bar(
+                sym_daily,
+                x="التاريخ",
+                y="صافي السيولة",
+                color="الإشارة",
+                color_discrete_map=SIGN_COLOR_MAP,
+            )
+            fig_sym.update_layout(legend_title_text="")
             fig_sym = add_watermark(fig_sym)
-            st.plotly_chart(fig_sym, use_container_width=True)
+
+            st.plotly_chart(fig_sym, use_container_width=True, key=f"sym_{key_base}")
 
         with c2:
             st.write("**إحصائيات الفترة**")
             st.metric("الإسم", sym_df["اسم_نهائي"].iloc[0] if "اسم_نهائي" in sym_df.columns else "-")
             st.metric("صافي السيولة", fmt_money(sym_df["صافي السيولة"].sum()))
+            if "التغير %" in sym_df.columns:
+                st.metric("متوسط التغير %", f'{sym_df["التغير %"].mean():.2f}%')
+            if "آخر سعر" in sym_df.columns and not sym_df.empty and not pd.isna(sym_df.iloc[-1].get("آخر سعر")):
+                st.metric("آخر سعر (آخر جلسة)", f'{float(sym_df.iloc[-1]["آخر سعر"]):.2f}')
             st.metric("أيام متتالية صافي موجب", str(consecutive_positive_days(sym_df)))
 
         st.write("**تفاصيل الجلسات**")
@@ -657,7 +705,12 @@ with tab_details:
         ]
         view_cols = [c for c in view_cols if c in sym_df.columns]
         show_table = sym_df[view_cols].rename(columns={"اسم_نهائي": "الإسم"})
-        st.dataframe(show_table.sort_values("التاريخ", ascending=False), use_container_width=True, hide_index=True)
+        st.dataframe(
+            show_table.sort_values("التاريخ", ascending=False),
+            use_container_width=True,
+            hide_index=True,
+            key=f"details_tbl_{key_base}"
+        )
 
 # =========================
 # TAB 4: History
@@ -685,10 +738,16 @@ with tab_history:
         ).sort_values("التاريخ")
 
         hist["الإشارة"] = hist["صافي السيولة"].apply(lambda x: "موجب" if x >= 0 else "سالب")
-        fig_hist = px.bar(hist, x="التاريخ", y="صافي السيولة", color="الإشارة")
+
+        fig_hist = px.bar(
+            hist, x="التاريخ", y="صافي السيولة",
+            color="الإشارة",
+            color_discrete_map=SIGN_COLOR_MAP,
+        )
+        fig_hist.update_layout(legend_title_text="")
         fig_hist = add_watermark(fig_hist)
 
-        st.plotly_chart(fig_hist, use_container_width=True)
+        st.plotly_chart(fig_hist, use_container_width=True, key=f"hist_{key_base}")
 
         table_cols = ["التاريخ", "آخر سعر", "التغير %", "صافي السيولة", "السيولة الداخلة", "السيولة الخارجة"]
         table_cols = [c for c in table_cols if c in hist.columns]
@@ -701,7 +760,12 @@ with tab_history:
             if c in hist_show.columns:
                 hist_show[c] = hist_show[c].apply(fmt_money)
 
-        st.dataframe(hist_show.sort_values("التاريخ", ascending=False), use_container_width=True, hide_index=True)
+        st.dataframe(
+            hist_show.sort_values("التاريخ", ascending=False),
+            use_container_width=True,
+            hide_index=True,
+            key=f"hist_tbl_{key_base}"
+        )
 
 # =========================
 # Footer
