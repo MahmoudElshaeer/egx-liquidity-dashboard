@@ -1,4 +1,7 @@
 import re
+import io
+from datetime import datetime, timezone
+
 import pandas as pd
 import streamlit as st
 import plotly.express as px
@@ -9,7 +12,7 @@ from pathlib import Path
 # =========================
 APP_TITLE = "مراقب السيولة"
 APP_SUBTITLE = "EGX Liquidity Monitor Dashboard"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.1.1"
 AUTHOR = "Mahmoud Abdrabbo"
 COPYRIGHT = f"© 2026 {AUTHOR}. All rights reserved."
 DISCLAIMER = "هذا التطبيق لأغراض معلوماتية فقط ولا يُعد توصية استثمارية."
@@ -23,7 +26,7 @@ st.set_page_config(page_title=APP_TITLE, layout="wide")
 PROJECT_DIR = Path(__file__).resolve().parent
 README_PATH = PROJECT_DIR / "README.md"
 
-CSV_PATH = PROJECT_DIR / "liquidity_all.csv"
+CSV_PATH  = PROJECT_DIR / "liquidity_all.csv"
 XLSX_PATH = PROJECT_DIR / "liquidity_all.xlsx"  # fallback
 
 # =========================
@@ -32,16 +35,13 @@ XLSX_PATH = PROJECT_DIR / "liquidity_all.xlsx"  # fallback
 st.markdown(
     """
     <style>
-    /* تكبير خط التابات */
     div[data-baseweb="tab"] > button {
         font-size: 26px !important;
         font-weight: 800 !important;
         padding-top: 12px !important;
         padding-bottom: 12px !important;
     }
-    /* تكبير عنوان الصفحة */
     h1 { font-size: 42px !important; }
-    /* تكبير عناوين الأقسام */
     h2 { font-size: 32px !important; }
     h3 { font-size: 26px !important; }
     </style>
@@ -81,66 +81,50 @@ NAME_OVERRIDES = {
     "PHGC": "بريميم هيلثكير جروب",
     "PHDC": "بالم هيلز",
     "RAYA": "راية",
-    # إضافات من قائمتك:
     "ARAB": "المطورون العرب القابضة",
 }
 
 # =========================
-# تنظيف/تطبيع عربي (General cleanup)
+# تنظيف/تطبيع عربي
 # =========================
 ARABIC_TATWEEL = "\u0640"
 ARABIC_DIACRITICS_RE = re.compile(r"[\u0617-\u061A\u064B-\u0652]")
 
-
 def is_arabic_char(ch: str) -> bool:
     return "\u0600" <= ch <= "\u06FF"
-
 
 def normalize_arabic_name(s: str) -> str:
     if s is None or (isinstance(s, float) and pd.isna(s)):
         return ""
-
     s = str(s)
 
-    # إزالة اتجاه/رموز خفية
-    s = (
-        s.replace("\u200f", "")
-        .replace("\u200e", "")
-        .replace("\u202b", "")
-        .replace("\u202a", "")
-        .replace("\xa0", " ")
-        .replace(ARABIC_TATWEEL, "")
+    s = (s.replace("\u200f", "")
+           .replace("\u200e", "")
+           .replace("\u202b", "")
+           .replace("\u202a", "")
+           .replace("\xa0", " ")
+           .replace(ARABIC_TATWEEL, "")
     )
 
-    # إزالة التشكيل
     s = ARABIC_DIACRITICS_RE.sub("", s)
-
-    # توحيد مسافات
     s = re.sub(r"\s+", " ", s).strip()
 
-    # دمج الحروف اللي الـ OCR فصلها: "كومبان ي" -> "كومباني" / "سي أي ب  ي" -> "سي أي بي"
     tokens = s.split(" ")
     merged = []
     for tok in tokens:
-        if (
-            len(tok) == 1
-            and merged
-            and is_arabic_char(tok)
-            and all(is_arabic_char(c) for c in merged[-1][-1:])
-        ):
+        if len(tok) == 1 and merged and is_arabic_char(tok) and all(is_arabic_char(c) for c in merged[-1][-1:]):
             merged[-1] = merged[-1] + tok
         else:
             merged.append(tok)
     s = " ".join(merged)
 
-    # إصلاحات OCR شائعة
     fixes = [
         ("مرصف", "مصرف"),
         ("مرص", "مصر"),
         ("مستشف", "مستشفى"),
         ("واإ", "والإ"),
         ("اإ", "الإ"),
-        ("اال", "ال"),  # االصول -> الاصول (تقريب)
+        ("اال", "ال"),
         ("ايست  ن", "ايسترن"),
         ("كومبائني", "كومباني"),
         ("كومبان ي", "كومباني"),
@@ -150,25 +134,40 @@ def normalize_arabic_name(s: str) -> str:
 
     return s.strip()
 
+# =========================
+# CSV reading (safe encodings)
+# =========================
+def read_csv_safe_path(path: Path) -> pd.DataFrame:
+    for enc in ("utf-8-sig", "cp1256", "utf-8"):
+        try:
+            return pd.read_csv(path, encoding=enc)
+        except UnicodeDecodeError:
+            continue
+    return pd.read_csv(path)
+
+def read_csv_safe_bytes(b: bytes) -> pd.DataFrame:
+    for enc in ("utf-8-sig", "cp1256", "utf-8"):
+        try:
+            return pd.read_csv(io.BytesIO(b), encoding=enc)
+        except UnicodeDecodeError:
+            continue
+    return pd.read_csv(io.BytesIO(b))
 
 # =========================
-# Load + unify columns
+# Unify + Validate
 # =========================
-@st.cache_data
 def load_data_df(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df.columns = df.columns.astype(str).str.strip()
 
-    df = df.rename(
-        columns={
-            "صافى السيولة": "صافي السيولة",
-            "أخر سعر": "آخر سعر",
-            "% مخطط السيولة": "نسبة مخطط السيولة",
-            "التغير%": "التغير %",
-            "التغير % ": "التغير %",
-            "الاسم": "الإسم",
-        }
-    )
+    df = df.rename(columns={
+        "صافى السيولة": "صافي السيولة",
+        "أخر سعر": "آخر سعر",
+        "% مخطط السيولة": "نسبة مخطط السيولة",
+        "التغير%": "التغير %",
+        "التغير % ": "التغير %",
+        "الاسم": "الإسم",
+    })
 
     required = ["التاريخ", "الرمز", "السيولة الداخلة", "السيولة الخارجة", "صافي السيولة"]
     missing = [c for c in required if c not in df.columns]
@@ -177,25 +176,25 @@ def load_data_df(df: pd.DataFrame) -> pd.DataFrame:
 
     df["التاريخ"] = pd.to_datetime(df["التاريخ"], errors="coerce")
 
-    # تحويل أرقام
     num_cols = [
-        "آخر سعر",
-        "التغير %",
-        "قيمة التداول",
-        "السيولة الداخلة",
-        "السيولة الخارجة",
-        "صافي السيولة",
-        "نسبة مخطط السيولة",
-        "رقم الصفحة",
+        "آخر سعر", "التغير %", "قيمة التداول",
+        "السيولة الداخلة", "السيولة الخارجة", "صافي السيولة",
+        "نسبة مخطط السيولة", "رقم الصفحة"
     ]
     for c in num_cols:
         if c in df.columns:
             df[c] = df[c].astype(str).str.replace(",", "", regex=False).str.strip()
             df[c] = pd.to_numeric(df[c], errors="coerce")
 
+    before = len(df)
     df = df.dropna(subset=["التاريخ", "الرمز"]).copy()
+    if len(df) == 0:
+        raise ValueError(
+            "بعد تحويل التاريخ/الرمز أصبحت البيانات فارغة. "
+            "راجع عمود 'التاريخ' وتنسيقه في الملف. "
+            f"(قبل التنظيف: {before} صف)"
+        )
 
-    # تنظيف الأسماء العربية + Overrides
     if "الإسم" in df.columns:
         df["اسم_منظف"] = df["الإسم"].apply(normalize_arabic_name)
     else:
@@ -203,39 +202,26 @@ def load_data_df(df: pd.DataFrame) -> pd.DataFrame:
 
     df["اسم_نهائي"] = df.apply(
         lambda r: NAME_OVERRIDES.get(str(r["الرمز"]).strip(), r["اسم_منظف"]),
-        axis=1,
+        axis=1
     )
     df["اسم_نهائي"] = df["اسم_نهائي"].fillna("").astype(str).str.strip()
     return df
 
+def file_signature(path: Path) -> tuple:
+    st_ = path.stat()
+    return (int(st_.st_mtime_ns), int(st_.st_size))
 
-@st.cache_data
-def load_data_from_csv(path_str: str, mtime: float) -> pd.DataFrame:
-    # mtime فقط لكسر الكاش عند تغيّر الملف
-    df = pd.read_csv(path_str, encoding="utf-8-sig")
+@st.cache_data(show_spinner=False)
+def load_data_from_csv(path_str: str, sig: tuple) -> pd.DataFrame:
+    _ = sig  # cache-bust
+    df = read_csv_safe_path(Path(path_str))
     return load_data_df(df)
 
-
-@st.cache_data
-def load_data_from_excel(path_str: str, mtime: float) -> pd.DataFrame:
+@st.cache_data(show_spinner=False)
+def load_data_from_excel(path_str: str, sig: tuple) -> pd.DataFrame:
+    _ = sig  # cache-bust
     df = pd.read_excel(path_str)
     return load_data_df(df)
-
-
-@st.cache_data
-def load_data_from_uploaded_csv(file_bytes: bytes) -> pd.DataFrame:
-    # CSV upload
-    from io import BytesIO
-    df = pd.read_csv(BytesIO(file_bytes), encoding="utf-8-sig")
-    return load_data_df(df)
-
-
-@st.cache_data
-def load_data_from_uploaded_excel(file_bytes: bytes) -> pd.DataFrame:
-    # XLSX upload
-    df = pd.read_excel(file_bytes)
-    return load_data_df(df)
-
 
 # =========================
 # Helpers
@@ -246,14 +232,10 @@ def fmt_money(x):
     x = float(x)
     sign = "-" if x < 0 else ""
     x = abs(x)
-    if x >= 1e9:
-        return f"{sign}{x/1e9:.2f}B"
-    if x >= 1e6:
-        return f"{sign}{x/1e6:.2f}M"
-    if x >= 1e3:
-        return f"{sign}{x/1e3:.2f}K"
+    if x >= 1e9:  return f"{sign}{x/1e9:.2f}B"
+    if x >= 1e6:  return f"{sign}{x/1e6:.2f}M"
+    if x >= 1e3:  return f"{sign}{x/1e3:.2f}K"
     return f"{sign}{x:.0f}"
-
 
 def consecutive_positive_days(df_sym):
     s = df_sym.sort_values("التاريخ")["صافي السيولة"].fillna(0).tolist()
@@ -265,7 +247,6 @@ def consecutive_positive_days(df_sym):
             break
     return cnt
 
-
 def style_net_column(v):
     if pd.isna(v):
         return ""
@@ -275,7 +256,6 @@ def style_net_column(v):
         return "color: #D50000; font-weight: 800;"
     return ""
 
-
 def weighted_mean(values, weights):
     v = pd.to_numeric(values, errors="coerce")
     w = pd.to_numeric(weights, errors="coerce")
@@ -283,7 +263,6 @@ def weighted_mean(values, weights):
     if mask.sum() == 0:
         return None
     return float((v[mask] * w[mask]).sum() / w[mask].sum())
-
 
 def get_change_metric(scope_df: pd.DataFrame, mode: str):
     if "التغير %" not in scope_df.columns or scope_df.empty:
@@ -314,14 +293,11 @@ def get_change_metric(scope_df: pd.DataFrame, mode: str):
 
     return "-", None
 
-
 def add_watermark(fig, text=COPYRIGHT):
     fig.add_annotation(
         text=text,
-        xref="paper",
-        yref="paper",
-        x=0.99,
-        y=0.01,
+        xref="paper", yref="paper",
+        x=0.99, y=0.01,
         xanchor="right",
         yanchor="bottom",
         showarrow=False,
@@ -330,6 +306,9 @@ def add_watermark(fig, text=COPYRIGHT):
     )
     return fig
 
+def fmt_dt(ts: float) -> str:
+    dt = datetime.fromtimestamp(ts, tz=timezone.utc).astimezone()
+    return dt.strftime("%Y-%m-%d %H:%M:%S %Z")
 
 # =========================
 # Header
@@ -338,38 +317,73 @@ st.title(f"📊 {APP_TITLE}")
 st.caption(f"{APP_SUBTITLE} — Version {APP_VERSION} — {COPYRIGHT}")
 
 # =========================
-# Load data (CSV first, XLSX fallback, then Upload)
+# Sidebar: refresh + debug
+# =========================
+with st.sidebar:
+    st.markdown("### ⚙️ أدوات")
+    if st.button("🔄 تحديث البيانات الآن (مسح الكاش)"):
+        st.cache_data.clear()
+        st.rerun()
+
+    st.markdown("---")
+    st.markdown("### 🧪 تشخيص سريع")
+
+# =========================
+# Load data (CSV first, XLSX fallback, else upload)
 # =========================
 df = None
 data_source = None
+data_path = None
+data_mtime = None
+data_size = None
 
-if CSV_PATH.exists():
-    df = load_data_from_csv(str(CSV_PATH), CSV_PATH.stat().st_mtime)
-    data_source = f"CSV: {CSV_PATH.name}"
-elif XLSX_PATH.exists():
-    df = load_data_from_excel(str(XLSX_PATH), XLSX_PATH.stat().st_mtime)
-    data_source = f"XLSX: {XLSX_PATH.name}"
-else:
-    st.warning("ملف البيانات غير موجود (liquidity_all.csv أو liquidity_all.xlsx). ارفع الملف من هنا.")
-    up = st.file_uploader("Upload liquidity_all.csv أو liquidity_all.xlsx", type=["csv", "xlsx"])
-    if up is None:
-        st.stop()
+try:
+    if CSV_PATH.exists():
+        sig = file_signature(CSV_PATH)
+        df = load_data_from_csv(str(CSV_PATH), sig)
+        data_source = "CSV"
+        data_path = str(CSV_PATH)
+        data_mtime = CSV_PATH.stat().st_mtime
+        data_size = CSV_PATH.stat().st_size
 
-    uploaded_bytes = up.getvalue()
-    if up.name.lower().endswith(".csv"):
-        df = load_data_from_uploaded_csv(uploaded_bytes)
-        data_source = f"Upload CSV: {up.name}"
+    elif XLSX_PATH.exists():
+        sig = file_signature(XLSX_PATH)
+        df = load_data_from_excel(str(XLSX_PATH), sig)
+        data_source = "XLSX (fallback)"
+        data_path = str(XLSX_PATH)
+        data_mtime = XLSX_PATH.stat().st_mtime
+        data_size = XLSX_PATH.stat().st_size
+
     else:
-        df = load_data_from_uploaded_excel(uploaded_bytes)
-        data_source = f"Upload XLSX: {up.name}"
+        st.warning("ملف البيانات غير موجود داخل الريبو. ارفع الملف من هنا.")
+        up = st.file_uploader("Upload liquidity_all.csv أو liquidity_all.xlsx", type=["csv", "xlsx"])
+        if up is None:
+            st.stop()
 
-# Debug (اختياري)
-with st.expander("🛠️ Debug (تأكيد التحميل)"):
-    st.write("Source:", data_source)
-    st.write("Rows:", len(df))
-    st.write("Date min:", df["التاريخ"].min())
-    st.write("Date max:", df["التاريخ"].max())
-    st.write("Columns:", list(df.columns))
+        if up.name.lower().endswith(".csv"):
+            tmp = read_csv_safe_bytes(up.getvalue())
+            df = load_data_df(tmp)
+            data_source = "Uploaded CSV"
+        else:
+            tmp = pd.read_excel(up.getvalue())
+            df = load_data_df(tmp)
+            data_source = "Uploaded XLSX"
+
+except Exception as e:
+    st.error(f"فشل تحميل البيانات: {type(e).__name__}: {e}")
+    st.stop()
+
+# Sidebar debug
+with st.sidebar:
+    st.write(f"**المصدر:** {data_source}")
+    if data_path:
+        st.write(f"**الملف:** `{Path(data_path).name}`")
+        st.write(f"**الحجم:** {data_size:,} bytes")
+        st.write(f"**آخر تعديل:** {fmt_dt(data_mtime)}")
+    st.write(f"**Rows:** {len(df):,}")
+    st.write(f"**Date range:** {df['التاريخ'].min().date()} → {df['التاريخ'].max().date()}")
+    with st.expander("🔍 Preview (أول 10 صفوف)"):
+        st.dataframe(df.head(10), use_container_width=True)
 
 # =========================
 # Top filters
@@ -388,14 +402,14 @@ with c3:
 base_dff = df[(df["التاريخ"].dt.date >= start_date) & (df["التاريخ"].dt.date <= end_date)].copy()
 
 # =========================
-# Tabs (الإعدادات آخر حاجة بصريًا) + Help/About/README
+# Tabs
 # =========================
 tab_market, tab_watch, tab_details, tab_history, tab_help, tab_about, tab_readme, tab_settings = st.tabs(
     ["📈 السوق", "📌 مراقب السيولة", "🔎 تفاصيل السهم", "📊 تاريخ السيولة", "❓ Help", "ℹ️ About", "📄 README", "⚙️ إعدادات"]
 )
 
 # =========================
-# SETTINGS TAB (آخر Tab بصريًا - لكنه يتنفذ عادي)
+# SETTINGS TAB
 # =========================
 with tab_settings:
     st.header("⚙️ إعدادات العرض")
@@ -432,7 +446,7 @@ with tab_settings:
     st.caption("ملاحظة: التابات الأخرى تستخدم الإعدادات دي تلقائيًا.")
 
 # =========================
-# Apply settings to dff
+# Apply settings
 # =========================
 dff = base_dff.copy()
 
@@ -454,7 +468,6 @@ if net_filter == "صافي موجب فقط":
 elif net_filter == "صافي سالب فقط":
     dff = dff[dff["صافي السيولة"] < 0].copy()
 
-# نطاق العرض (سوق أو سهم)
 if selected_symbol != "(السوق)":
     scope_df = dff[dff["الرمز"] == selected_symbol].copy()
     nm = scope_df["اسم_نهائي"].iloc[0] if (not scope_df.empty and "اسم_نهائي" in scope_df.columns) else ""
@@ -477,10 +490,6 @@ with tab_help:
   - فترة مخصصة / آخر 10 جلسات / آخر جلسة فقط
   - فلترة صافي السيولة (موجب فقط / سالب فقط)
   - فلترة نسبة مخطط السيولة
-
-### ملاحظات
-- تم إضافة تصحيح تلقائي للأسماء العربية (OCR cleanup) + قاموس رموز (Overrides).
-- الألوان: **أخضر = صافي موجب**، **أحمر = صافي سالب**.
 """
     )
     st.info(DISCLAIMER)
@@ -512,11 +521,10 @@ Version: `{APP_VERSION}`
     )
 
 # =========================
-# TAB: README (عرض من الملف + تنزيل)
+# TAB: README
 # =========================
 with tab_readme:
     st.header("📄 README داخل الداشبورد")
-
     if README_PATH.exists():
         readme_text = README_PATH.read_text(encoding="utf-8")
         st.download_button(
@@ -527,11 +535,11 @@ with tab_readme:
         )
         st.markdown(readme_text)
     else:
-        st.warning("الملف README.md غير موجود بجانب app.py. ضع README.md في نفس مجلد المشروع.")
+        st.warning("الملف README.md غير موجود بجانب app.py.")
         st.code(str(README_PATH))
 
 # =========================
-# TAB 1: Market/Symbol summary
+# TAB 1: Market summary
 # =========================
 with tab_market:
     st.header(f"ملخص ({scope_label})")
@@ -550,47 +558,26 @@ with tab_market:
         m3.metric("صافي السيولة", fmt_money(net))
         m4.metric("% التغير", change_value, delta=change_delta)
 
-        pie_df = pd.DataFrame({
-            "النوع": ["السيولة الداخلة", "السيولة الخارجة"],
-            "القيمة": [total_in, total_out]
-        })
+        pie_df = pd.DataFrame({"النوع": ["السيولة الداخلة", "السيولة الخارجة"], "القيمة": [total_in, total_out]})
         fig_pie = px.pie(pie_df, names="النوع", values="القيمة", hole=0.6)
-        fig_pie.update_traces(
-            textposition="outside",
-            textinfo="percent+label",
-            marker=dict(colors=["#00C853", "#D50000"])
-        )
         fig_pie = add_watermark(fig_pie)
 
         daily_net = (
             scope_df.assign(التاريخ=scope_df["التاريخ"].dt.date)
-            .groupby("التاريخ", as_index=False)["صافي السيولة"].sum()
+                    .groupby("التاريخ", as_index=False)["صافي السيولة"].sum()
         )
         daily_net["الإشارة"] = daily_net["صافي السيولة"].apply(lambda x: "موجب" if x >= 0 else "سالب")
-        fig_market = px.bar(
-            daily_net, x="التاريخ", y="صافي السيولة",
-            color="الإشارة",
-            color_discrete_map={"موجب": "#00C853", "سالب": "#D50000"},
-        )
-        fig_market.update_layout(legend_title_text="")
+        fig_market = px.bar(daily_net, x="التاريخ", y="صافي السيولة", color="الإشارة")
         fig_market = add_watermark(fig_market)
 
         left, right = st.columns([1, 1])
         with left:
-            st.plotly_chart(
-                fig_pie,
-                use_container_width=True,
-                key=f"pie_{selected_symbol}_{mode}_{net_filter}_{min_liq_pct}_{start_date}_{end_date}"
-            )
+            st.plotly_chart(fig_pie, use_container_width=True)
         with right:
-            st.plotly_chart(
-                fig_market,
-                use_container_width=True,
-                key=f"market_{selected_symbol}_{mode}_{net_filter}_{min_liq_pct}_{start_date}_{end_date}"
-            )
+            st.plotly_chart(fig_market, use_container_width=True)
 
 # =========================
-# TAB 2: Watchlist ranking
+# TAB 2: Watchlist
 # =========================
 with tab_watch:
     st.header("مراقب السيولة (ترتيب الأسهم)")
@@ -604,43 +591,34 @@ with tab_watch:
                 return ""
             return x.value_counts().idxmax()
 
-        rank = (
-            dff.groupby("الرمز", as_index=False)
-            .agg({
-                "اسم_نهائي": most_common_name,
-                "صافي السيولة": "sum",
-                "قيمة التداول": "sum",
-                "التغير %": "mean"
-            })
-        )
+        agg_map = {"اسم_نهائي": most_common_name, "صافي السيولة": "sum"}
+        if "قيمة التداول" in dff.columns:
+            agg_map["قيمة التداول"] = "sum"
+        if "التغير %" in dff.columns:
+            agg_map["التغير %"] = "mean"
 
-        consec_map = {}
-        for sym in rank["الرمز"].tolist():
-            sym_df = dff[dff["الرمز"] == sym]
-            consec_map[sym] = consecutive_positive_days(sym_df)
+        rank = dff.groupby("الرمز", as_index=False).agg(agg_map)
+
+        consec_map = {sym: consecutive_positive_days(dff[dff["الرمز"] == sym]) for sym in rank["الرمز"].tolist()}
         rank["أيام متتالية (صافي موجب)"] = rank["الرمز"].map(consec_map).fillna(0).astype(int)
 
         rank = rank.sort_values("صافي السيولة", ascending=False)
 
         top_n = st.slider("عدد الأسهم المعروضة", 10, 200, 30, 10, key="topn_watch")
+        show_raw = rank.head(top_n).copy().rename(columns={"اسم_نهائي": "الإسم"})
 
-        show_raw = rank.head(top_n).copy()
-        show_raw = show_raw.rename(columns={"اسم_نهائي": "الإسم"})
-
-        styler = (
-            show_raw.style
-            .applymap(style_net_column, subset=["صافي السيولة"])
-            .format({
-                "صافي السيولة": lambda v: fmt_money(v),
-                "قيمة التداول": lambda v: fmt_money(v),
-                "التغير %": "{:.2f}".format
-            })
-        )
+        styler = show_raw.style.applymap(style_net_column, subset=["صافي السيولة"])
+        fmt_map = {"صافي السيولة": lambda v: fmt_money(v)}
+        if "قيمة التداول" in show_raw.columns:
+            fmt_map["قيمة التداول"] = lambda v: fmt_money(v)
+        if "التغير %" in show_raw.columns:
+            fmt_map["التغير %"] = "{:.2f}".format
+        styler = styler.format(fmt_map)
 
         st.dataframe(styler, use_container_width=True, hide_index=True)
 
 # =========================
-# TAB 3: Symbol details
+# TAB 3: Details
 # =========================
 with tab_details:
     st.header("تفاصيل السهم")
@@ -656,32 +634,17 @@ with tab_details:
         with c1:
             sym_daily = (
                 sym_df.assign(التاريخ=sym_df["التاريخ"].dt.date)
-                .groupby("التاريخ", as_index=False)["صافي السيولة"].sum()
+                      .groupby("التاريخ", as_index=False)["صافي السيولة"].sum()
             )
             sym_daily["الإشارة"] = sym_daily["صافي السيولة"].apply(lambda x: "موجب" if x >= 0 else "سالب")
-            fig_sym = px.bar(
-                sym_daily,
-                x="التاريخ",
-                y="صافي السيولة",
-                color="الإشارة",
-                color_discrete_map={"موجب": "#00C853", "سالب": "#D50000"},
-            )
-            fig_sym.update_layout(legend_title_text="")
+            fig_sym = px.bar(sym_daily, x="التاريخ", y="صافي السيولة", color="الإشارة")
             fig_sym = add_watermark(fig_sym)
-
-            st.plotly_chart(
-                fig_sym, use_container_width=True,
-                key=f"sym_{selected_symbol}_{mode}_{net_filter}_{min_liq_pct}_{start_date}_{end_date}"
-            )
+            st.plotly_chart(fig_sym, use_container_width=True)
 
         with c2:
             st.write("**إحصائيات الفترة**")
             st.metric("الإسم", sym_df["اسم_نهائي"].iloc[0] if "اسم_نهائي" in sym_df.columns else "-")
             st.metric("صافي السيولة", fmt_money(sym_df["صافي السيولة"].sum()))
-            if "التغير %" in sym_df.columns:
-                st.metric("متوسط التغير %", f'{sym_df["التغير %"].mean():.2f}%')
-            if "آخر سعر" in sym_df.columns and not sym_df.empty:
-                st.metric("آخر سعر (آخر جلسة)", f'{sym_df.iloc[-1]["آخر سعر"]:.2f}')
             st.metric("أيام متتالية صافي موجب", str(consecutive_positive_days(sym_df)))
 
         st.write("**تفاصيل الجلسات**")
@@ -705,31 +668,27 @@ with tab_history:
     if scope_df.empty:
         st.warning("لا توجد بيانات حسب الفلاتر المختارة.")
     else:
+        agg_map = {
+            "صافي السيولة": "sum",
+            "السيولة الداخلة": "sum",
+            "السيولة الخارجة": "sum",
+        }
+        if "التغير %" in scope_df.columns:
+            agg_map["التغير %"] = "mean"
+        if "آخر سعر" in scope_df.columns:
+            agg_map["آخر سعر"] = "last"
+
         hist = (
             scope_df.assign(التاريخ=scope_df["التاريخ"].dt.date)
-            .groupby("التاريخ", as_index=False)
-            .agg({
-                "صافي السيولة": "sum",
-                "السيولة الداخلة": "sum",
-                "السيولة الخارجة": "sum",
-                "التغير %": "mean",
-                "آخر سعر": "last" if "آخر سعر" in scope_df.columns else "size"
-            })
+                    .groupby("التاريخ", as_index=False)
+                    .agg(agg_map)
         ).sort_values("التاريخ")
 
         hist["الإشارة"] = hist["صافي السيولة"].apply(lambda x: "موجب" if x >= 0 else "سالب")
-        fig_hist = px.bar(
-            hist, x="التاريخ", y="صافي السيولة",
-            color="الإشارة",
-            color_discrete_map={"موجب": "#00C853", "سالب": "#D50000"},
-        )
-        fig_hist.update_layout(legend_title_text="")
+        fig_hist = px.bar(hist, x="التاريخ", y="صافي السيولة", color="الإشارة")
         fig_hist = add_watermark(fig_hist)
 
-        st.plotly_chart(
-            fig_hist, use_container_width=True,
-            key=f"hist_{selected_symbol}_{mode}_{net_filter}_{min_liq_pct}_{start_date}_{end_date}"
-        )
+        st.plotly_chart(fig_hist, use_container_width=True)
 
         table_cols = ["التاريخ", "آخر سعر", "التغير %", "صافي السيولة", "السيولة الداخلة", "السيولة الخارجة"]
         table_cols = [c for c in table_cols if c in hist.columns]
@@ -745,7 +704,7 @@ with tab_history:
         st.dataframe(hist_show.sort_values("التاريخ", ascending=False), use_container_width=True, hide_index=True)
 
 # =========================
-# Footer (حقوق + Disclaimer)
+# Footer
 # =========================
 st.markdown(
     f"""
