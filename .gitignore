@@ -39,3 +39,5 @@ Thumbs.db
 # تجاهل ملفات ضخمة/مؤقتة فقط:
 *.pdf
 *.zip
+back/
+data/
