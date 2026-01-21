@@ -41,3 +41,5 @@ Thumbs.db
 *.zip
 back/
 data/
+*.bak
+*.docx
