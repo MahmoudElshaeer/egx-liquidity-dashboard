@@ -1,17 +1,20 @@
 ﻿timestamp,pdf_name,pdf_size,pdf_mtime_ns,pdf_sha256,status,rows,session_date,output_csv,note
-2026-01-20T23:21:56,20260120_232156_سيولة-177.pdf,580748.0,1.76894e+18,,FAIL,0.0,,,NotImplementedError: PDF parser is not implemented yet. Move your parsing code into updater/parser/ files.
-2026-01-20T23:22:00,20260120_232200_سيولة-177.pdf,580748.0,1.76894e+18,,FAIL,0.0,,,NotImplementedError: PDF parser is not implemented yet. Move your parsing code into updater/parser/ files.
-2026-01-20T23:22:10,20260120_232210_سيولة-204.pdf,577308.0,1.76894e+18,,FAIL,0.0,,,NotImplementedError: PDF parser is not implemented yet. Move your parsing code into updater/parser/ files.
-2026-01-20T23:35:59,20260120_233559_سيولة-177.pdf,580748.0,1.76894e+18,,FAIL,0.0,,,NotImplementedError: PDF parser is not implemented yet. Move your parsing code into updater/parser/ files.
-2026-01-20T23:55:41,20260120_235541_سيولة-183.pdf,568624.0,1.76894e+18,,FAIL,0.0,,,NotImplementedError: PDF parser is not implemented yet. Move your parsing code into updater/parser/ files.
-2026-01-20T23:56:14,20260120_235614_سيولة-184.pdf,564782.0,1.76894e+18,,FAIL,0.0,,,NotImplementedError: PDF parser is not implemented yet. Move your parsing code into updater/parser/ files.
-2026-01-21T09:40:16,20260121_094016_سيولة-209.pdf,582512.0,1.76898e+18,,OK,144.0,1/20/2026,D:\Projects\merg\liquidity_all.csv,
-2026-01-21T09:47:51,20260121_094743_سيولة-209.pdf,582512.0,1.76898e+18,,OK,144.0,1/20/2026,D:\Projects\merg\liquidity_all.csv,
-2026-01-21T09:58:01,20260121_095758_سيولة-209.pdf,582512.0,1.76898e+18,0654da9f41f05e688fd07664484902f5c8fe074cb4c64aa39f656c79c5e17001,OK,144.0,1/20/2026,D:\Projects\merg\liquidity_all.csv,
-2026-01-21T09:58:02,20260121_095758_سيولة-209.pdf,582512.0,1.76898e+18,0654da9f41f05e688fd07664484902f5c8fe074cb4c64aa39f656c79c5e17001,FAIL,0.0,,,"RuntimeError: The following paths are ignored by one of your .gitignore files:
-data
-hint: Use -f if you really want to add them.
-hint: Disable this message with ""git config set advice.addIgnoredFile false"""
 ,,,,,,,,,
 ,,,,,,,,,
-2026-01-21T19:42:03,20260121_194203_سيولة-210.pdf,565700.0,1.7690137234822659e+18,7b57a23504555f1088917e148b85a4a744aa5ce0fee1fd098f6a87c76b921f58,OK,136.0,2026-01-21,D:\Projects\merg\liquidity_all.csv,DRY_RUN
+,,,,,,,,,
+,,,,,,,,,
+,,,,,,,,,
+,,,,,,,,,
+,,,,,,,,,
+,,,,,,,,,
+,,,,,,,,,
+,,,,,,,,,
+,,,,,,,,,
+,,,,,,,,,
+,,,,,,,,,
+,,,,,,,,,
+,,,,,,,,,
+,,,,,,,,,
+,,,,,,,,,
+,,,,,,,,,
+2026-01-21T21:08:38,20260121_210836_سيولة-210.pdf,565700.0,1.7690189160343816e+18,7b57a23504555f1088917e148b85a4a744aa5ce0fee1fd098f6a87c76b921f58,OK,136.0,2026-01-21,D:\Projects\merg\liquidity_all.csv,
