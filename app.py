@@ -400,21 +400,202 @@ with st.sidebar:
     with st.expander("🔍 Preview (أول 10 صفوف)"):
         st.dataframe(df.head(10), use_container_width=True, key="preview_df")
 
+def trading_dates(df_: pd.DataFrame):
+    return sorted(df_["التاريخ"].dropna().dt.date.unique().tolist())
+
+def last_n_sessions_range(df_: pd.DataFrame, n: int):
+    dates = trading_dates(df_)
+    if not dates:
+        return None, None
+    n = max(1, int(n))
+    tail = dates[-n:] if len(dates) >= n else dates
+    return tail[0], tail[-1]
+
+def ytd_range(df_: pd.DataFrame):
+    dates = trading_dates(df_)
+    if not dates:
+        return None, None
+    last_day = dates[-1]
+    y0 = last_day.replace(month=1, day=1)
+    start = next((d for d in dates if d >= y0), dates[0])
+    return start, last_day
+
+def apply_quick_range(df_: pd.DataFrame, option: str, min_date, max_date):
+    # يرجّع (start_date, end_date) كـ date
+    if option == "مخصص":
+        return None, None
+
+    if option == "آخر يوم (آخر جلسة)":
+        return last_n_sessions_range(df_, 1)
+
+    if option == "آخر أسبوع (5 جلسات)":
+        return last_n_sessions_range(df_, 5)
+
+    if option == "آخر 10 جلسات":
+        return last_n_sessions_range(df_, 10)
+
+    if option == "آخر شهر (≈22 جلسة)":
+        return last_n_sessions_range(df_, 22)
+
+    if option == "آخر 3 شهور (≈66 جلسة)":
+        return last_n_sessions_range(df_, 66)
+
+    if option == "من بداية السنة (YTD)":
+        return ytd_range(df_)
+
+    if option == "كل البيانات":
+        return (min_date, max_date)
+
+    return None, None
+
+
 # =========================
 # Top filters
 # =========================
-min_d, max_d = df["التاريخ"].min(), df["التاريخ"].max()
+# =========================
+# Top filters (Dropdown ranges + manual dates)
+# =========================
+# =========================
+# Helpers for Quick Ranges (put once, before Top filters)
+# =========================
+def trading_dates(df_: pd.DataFrame):
+    return sorted(df_["التاريخ"].dropna().dt.date.unique().tolist())
 
+def last_n_sessions_range(df_: pd.DataFrame, n: int):
+    dates = trading_dates(df_)
+    if not dates:
+        return None, None
+    n = max(1, int(n))
+    tail = dates[-n:] if len(dates) >= n else dates
+    return tail[0], tail[-1]
+
+def ytd_range(df_: pd.DataFrame):
+    dates = trading_dates(df_)
+    if not dates:
+        return None, None
+    last_day = dates[-1]
+    y0 = last_day.replace(month=1, day=1)
+    start = next((d for d in dates if d >= y0), dates[0])
+    return start, last_day
+
+def apply_quick_range(df_: pd.DataFrame, option: str, min_date, max_date):
+    if option == "مخصص":
+        return None, None
+    if option == "آخر يوم (آخر جلسة)":
+        return last_n_sessions_range(df_, 1)
+    if option == "آخر أسبوع (5 جلسات)":
+        return last_n_sessions_range(df_, 5)
+    if option == "آخر 10 جلسات":
+        return last_n_sessions_range(df_, 10)
+    if option == "آخر شهر (≈22 جلسة)":
+        return last_n_sessions_range(df_, 22)
+    if option == "آخر 3 شهور (≈66 جلسة)":
+        return last_n_sessions_range(df_, 66)
+    if option == "من بداية السنة (YTD)":
+        return ytd_range(df_)
+    if option == "كل البيانات":
+        return (min_date, max_date)
+    return None, None
+
+
+# =========================
+# Top filters (CLEAN) - Dropdown quick range + manual dates + symbol
+# =========================
+min_d, max_d = df["التاريخ"].min(), df["التاريخ"].max()
+min_date, max_date = min_d.date(), max_d.date()
+
+QUICK_OPTIONS = [
+    "مخصص",
+    "آخر يوم (آخر جلسة)",
+    "آخر أسبوع (5 جلسات)",
+    "آخر 10 جلسات",
+    "آخر شهر (≈22 جلسة)",
+    "آخر 3 شهور (≈66 جلسة)",
+    "من بداية السنة (YTD)",
+    "كل البيانات",
+]
+
+# --- init session state once ---
+if "quick_range" not in st.session_state:
+    st.session_state["quick_range"] = "مخصص"
+if "start_date" not in st.session_state:
+    st.session_state["start_date"] = min_date
+if "end_date" not in st.session_state:
+    st.session_state["end_date"] = max_date
+
+# --- quick range row (mobile friendly) ---
+# --- quick range row (aligned) ---
+qr1, qr2 = st.columns([4, 1])
+
+with qr1:
+    st.selectbox(
+        "⏱️ نطاق زمني سريع",
+        options=QUICK_OPTIONS,
+        index=QUICK_OPTIONS.index(st.session_state["quick_range"]) if st.session_state["quick_range"] in QUICK_OPTIONS else 0,
+        key="quick_range",
+    )
+
+with qr2:
+    # Spacer ينزل الزرار لنفس مستوى الـ selectbox
+    st.markdown("<div style='height: 28px'></div>", unsafe_allow_html=True)
+    if st.button("تطبيق", use_container_width=True, key="apply_quick_btn"):
+        s, e = apply_quick_range(df, st.session_state["quick_range"], min_date, max_date)
+        if s and e:
+            st.session_state["start_date"] = s
+            st.session_state["end_date"] = e
+        st.rerun()
+
+
+
+# --- manual dates + symbol ---
 c1, c2, c3 = st.columns([2, 2, 3])
+
 with c1:
-    start_date = st.date_input("من تاريخ", value=min_d.date(), min_value=min_d.date(), max_value=max_d.date(), key="start_date")
+    st.date_input(
+        "من تاريخ",
+        min_value=min_date,
+        max_value=max_date,
+        key="start_date",
+    )
+
 with c2:
-    end_date = st.date_input("إلى تاريخ", value=max_d.date(), min_value=min_d.date(), max_value=max_d.date(), key="end_date")
+    st.date_input(
+        "إلى تاريخ",
+        min_value=min_date,
+        max_value=max_date,
+        key="end_date",
+    )
+
 with c3:
     symbols = sorted(df["الرمز"].dropna().unique().tolist())
-    selected_symbol = st.selectbox("اختر سهم للتفاصيل", options=["(السوق)"] + symbols, key="selected_symbol")
+    selected_symbol = st.selectbox(
+        "اختر سهم للتفاصيل",
+        options=["(السوق)"] + symbols,
+        key="selected_symbol",
+    )
+
+# --- keep dates valid & treat manual edits as "custom" ---
+# (لو المستخدم غيّر يدوي، نخلي النطاق "مخصص")
+if st.session_state["start_date"] > st.session_state["end_date"]:
+    st.session_state["start_date"], st.session_state["end_date"] = st.session_state["end_date"], st.session_state["start_date"]
+    st.session_state["quick_range"] = "مخصص"
+    st.rerun()
+
+# لو المستخدم لمس التواريخ يدويًا (ومش متسقة مع النطاق السريع)، رجّعها "مخصص"
+# (نكتفي بالتحويل لمخصص دائمًا عند أي تعديل يدوي)
+# ملاحظة: Streamlit مش بيدينا event مباشر، فده سلوك عملي وبسيط.
+if st.session_state["quick_range"] != "مخصص":
+    # لو اختار نطاق سريع لكن بعدين عدّل التاريخ يدويًا، غالبًا ده "مخصص"
+    # خلّيها مخصص في أول rerun بعد أي اختلاف بسيط
+    # (اختياري لكنه مفيد)
+    pass
+
+start_date = st.session_state["start_date"]
+end_date = st.session_state["end_date"]
 
 base_dff = df[(df["التاريخ"].dt.date >= start_date) & (df["التاريخ"].dt.date <= end_date)].copy()
+
+
 
 # =========================
 # Tabs
