@@ -66,3 +66,4 @@
 2026-03-10T00:02:27,20260310_000159_سيولة-241.pdf,626342.0,1.7730901199304988e+18,6b1bc3435af39a3c7ea03713cb2daa589cef9b5c7863e4a70e9591dec8a03a7b,FAIL,0.0,,,RuntimeError: fatal: unable to access 'https://github.com/MahmoudElshaeer/egx-liquidity-dashboard.git/': Failed to connect to github.com port 443 after 21160 ms: Could not connect to server
 2026-03-11T23:55:33,20260311_235530_سيولة-243.pdf,648651.0,1.7732625302176973e+18,d185733a9946ded42b3721bdc531980c77e3d9b6135e5bcf74735ca5c82315aa,OK,133.0,2026-03-11,D:\Projects\merg\liquidity_all.csv,
 2026-03-13T01:48:22,20260313_014814_سيولة-244.pdf,626485.0,1.773355694893441e+18,2e01bd7e58a3634d5a7c41c41af0fe1cc5484ee6eb04c8866103687281963336,OK,126.0,2026-03-12,D:\Projects\merg\liquidity_all.csv,
+2026-03-16T00:45:56,20260316_004550_سيولة-245.pdf,597332.0,1.7736111504275507e+18,32271ba1bdfab8b5bf73579af323eb482064b0557cb86b6a983d1dd7a4a72d34,OK,114.0,2026-03-15,D:\Projects\merg\liquidity_all.csv,
