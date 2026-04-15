@@ -80,3 +80,7 @@
 2026-04-15T10:52:37,20260415_105230_سيولة-257.pdf,707472.0,1.77623955085226e+18,b9a65b7a038184daa53accde24d8cd41d1eac5be6c83a502eadeb51225b6efe6,OK,155.0,2026-04-06,D:\Projects\merg\liquidity_all.csv,
 2026-04-15T10:52:55,20260415_105249_سيولة-259.pdf,704279.0,1.7762395690070413e+18,8ce165c964196352bf81a53653915f38668498fb9203d270a9ddfbe9d5d8f077,OK,153.0,2026-04-08,D:\Projects\merg\liquidity_all.csv,
 2026-04-15T10:53:29,20260415_105323_سيولة-260.pdf,596559.0,1.776239603365203e+18,f053d4ef6edf48dc6ac39736727bd2d4f7ad6d5aaf54674864c96f2b6d15a955,OK,147.0,2026-04-09,D:\Projects\merg\liquidity_all.csv,
+2026-04-15T10:53:37,20260415_105323_سيولة-260.pdf,596559.0,1.776239603365203e+18,f053d4ef6edf48dc6ac39736727bd2d4f7ad6d5aaf54674864c96f2b6d15a955,FAIL,0.0,,,"RuntimeError: To https://github.com/MahmoudElshaeer/egx-liquidity-dashboard.git
+ ! [remote rejected] main -> main (cannot lock ref 'refs/heads/main': is at f6db9d54e1e1dfd53ee83407f82300d5c5c0d0d9 but expected 3345f92c80d4551ae76628357e30cbd8c6c0954e)
+error: failed to push some refs to 'https://github.com/MahmoudElshaeer/egx-liquidity-dashboard.git'"
+2026-04-15T10:54:13,20260415_105407_سيولة-261.pdf,692154.0,1.7762396474462587e+18,26182c3f87a78be60c4d025517ac4b2892d5584bba35af4cb6936f2b8445be84,OK,148.0,2026-04-14,D:\Projects\merg\liquidity_all.csv,
